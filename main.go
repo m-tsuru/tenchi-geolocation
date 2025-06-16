@@ -2,8 +2,10 @@ package main
 
 import (
 	"log"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+
 	"github.com/m-tsuru/tenchi-geolocation/lib"
 	"github.com/m-tsuru/tenchi-geolocation/structs"
 	"gorm.io/driver/sqlite"
@@ -37,6 +39,55 @@ func Requirelogin(db *gorm.DB, jwtTokenSecret string) fiber.Handler {
 	}
 }
 
+func AllowTimingMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// 許可する時刻（"15:04" 形式）の配列
+		allowedTimes := []string{
+			"10:00",
+			"10:30",
+			"11:00",
+			"11:30",
+			"12:00",
+			"12:30",
+			"13:00",
+			"13:30",
+			"14:00",
+			"14:30",
+			"15:00",
+			"15:30",
+			"16:00",
+			"16:30",
+			"17:00",
+			"17:30",
+			"18:00",
+		}
+
+		now := c.Context().Time()
+		for _, t := range allowedTimes {
+			parsed, err := strconv.ParseInt(t[:2], 10, 0)
+			if err != nil {
+				continue // フォーマット不正はスキップ
+			}
+			hour := int(parsed)
+			minute, err := strconv.ParseInt(t[3:], 10, 0)
+			if err != nil {
+				continue // フォーマット不正はスキップ
+			}
+			// 指定時刻の前後2分の範囲
+			startHM := hour*60 + int(minute) - 3
+			endHM := hour*60 + int(minute) + 3
+
+			// 現在時刻の年月日は無視し、時分のみ比較
+			nowHM := now.Hour()*60 + now.Minute()
+
+			if startHM <= nowHM && nowHM <= endHM {
+				return c.Next()
+			}
+		}
+		return c.Status(fiber.StatusForbidden).SendString("Request not allowed at this time")
+	}
+}
+
 func main() {
 	oaCfg, svrCfg, err := lib.LoadConfig()
 	if err != nil {
@@ -62,6 +113,8 @@ func main() {
 	}
 
 	app := fiber.New()
+	app.Static("/", "./web")
+
 	api := app.Group("/api")
 
 	api.Get("/login", func(c *fiber.Ctx) error {
@@ -96,7 +149,7 @@ func main() {
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to create user: " + err.Error())
 			}
-			return c.SendString("ok")
+			return c.Redirect("/", fiber.StatusFound)
 		}
 
 		// JSON Web Token Generation
@@ -113,7 +166,7 @@ func main() {
 			SameSite: fiber.CookieSameSiteStrictMode,
 		})
 
-		return c.SendString("ok")
+		return c.Redirect("/", fiber.StatusFound)
 	})
 
 	auth := api.Group("/", Requirelogin(db, svrCfg.JWTTokenSecret))
@@ -125,16 +178,23 @@ func main() {
 		}
 		userID, err := lib.GetUserIDByJWT(jwtToken, svrCfg.JWTTokenSecret)
 		if err != nil {
-			// Handle error
 			return c.Status(fiber.StatusUnauthorized).SendString("Invalid JWT token: " + err.Error())
 		}
 		dbInstance := &structs.Database{DB: db}
 		userDetail, err := dbInstance.GetUserDetailByID(userID)
 		if err != nil {
-			// Handle error
 			return c.Status(fiber.StatusInternalServerError).SendString("Failed to get user detail: " + err.Error())
 		}
-		return c.JSON(userDetail)
+		tid := strconv.Itoa(userDetail.Team.ID)
+		teamDetail, err := dbInstance.GetTeamDetailByID(tid)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Failed to get team detail: " + err.Error())
+		}
+		return c.JSON(fiber.Map{
+			"user_profile": userDetail.UserProfile,
+			"team":         userDetail.Team,
+			"team_members": teamDetail.Members,
+		})
 	})
 
 	auth.Get("/user/:id", func(c *fiber.Ctx) error {
@@ -149,20 +209,23 @@ func main() {
 	})
 
 	auth.Post("/user/me/name", func(c *fiber.Ctx) error {
-		newUserName := c.FormValue("name")
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).SendString("Invalid request data: " + err.Error())
+		}
 		jwtToken := c.Cookies("jwt")
 		if jwtToken == "" {
 			return c.Status(fiber.StatusUnauthorized).SendString("JWT token is required")
 		}
 		userID, err := lib.GetUserIDByJWT(jwtToken, svrCfg.JWTTokenSecret)
 		if err != nil {
-			// Handle error
 			return c.Status(fiber.StatusUnauthorized).SendString("Invalid JWT token: " + err.Error())
 		}
 		dbInstance := &structs.Database{DB: db}
-		userDetail, err := dbInstance.ChangeUserName(userID, newUserName)
+		userDetail, err := dbInstance.ChangeUserName(userID, req.Name)
 		if err != nil {
-			// Handle error
 			return c.Status(fiber.StatusInternalServerError).SendString("Failed to change user name: " + err.Error())
 		}
 		return c.JSON(userDetail)
@@ -179,6 +242,26 @@ func main() {
 		return c.JSON(teamDetail)
 	})
 
+	auth.Post("/team/:id", func(c *fiber.Ctx) error {
+		teamID := c.Params("id")
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).SendString("Invalid request data: " + err.Error())
+		}
+		dbInstance := &structs.Database{DB: db}
+		var team structs.Team
+		if err := dbInstance.First(&team, "id = ?", teamID).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).SendString("Team not found")
+		}
+		team.Name = req.Name
+		if err := dbInstance.Save(&team).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Failed to update team name: " + err.Error())
+		}
+		return c.JSON(team)
+	})
+
 	auth.Get("/geo", func(c *fiber.Ctx) error {
 		dbInstance := &structs.Database{DB: db}
 		geolocationDetails, err := dbInstance.GetGeolocationLatestAll()
@@ -189,7 +272,7 @@ func main() {
 		return c.JSON(geolocationDetails)
 	})
 
-	auth.Post("/geo", func(c *fiber.Ctx) error {
+	auth.Post("/geo", AllowTimingMiddleware(), func(c *fiber.Ctx) error {
 		jwtToken := c.Cookies("jwt")
 		if jwtToken == "" {
 			return c.Status(fiber.StatusUnauthorized).SendString("JWT token is required")
