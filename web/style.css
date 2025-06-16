@@ -227,11 +227,13 @@ position: fixed;
   color: #3498db;
   font-weight: bold;
   margin-bottom: 0.2em;
+  text-decoration: solid underline;
 }
 .drawer-profile-username {
   font-size: 1.2em;
   font-weight: 600;
   color: #2c3e50;
+  text-decoration: solid underline;
 }
 .drawer-team-list {
   width: 100%;
