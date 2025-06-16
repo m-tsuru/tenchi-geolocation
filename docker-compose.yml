@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tenchi-geolocation-app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app/web
+      - ./main.db:/app/main.db
+    environment:
+      - TZ=Asia/Tokyo
+    restart: unless-stopped
