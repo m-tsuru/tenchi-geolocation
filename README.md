@@ -46,3 +46,9 @@
 いろんなことができる。
 
 <img src="./docs/ss3.png" alt="スクリーンショット3" width="300px">
+
+## ウェブフック
+
+位置情報を登録するとウェブフックが飛んでくる（Discord）。
+
+<img src="./docs/ss4.png" alt="ウェブフックの例" width="300px">
