@@ -17,10 +17,10 @@ type ServerConfig struct {
 	JWTTokenSecret string
 }
 
-func LoadConfig() (*oauth2.Config, *ServerConfig, error) {
+func LoadConfig() (*oauth2.Config, *ServerConfig, *string, *string, error) {
 	cfg, err := ini.Load(".env")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	clientID := cfg.Section("Google").Key("ClientID").String()
@@ -28,19 +28,26 @@ func LoadConfig() (*oauth2.Config, *ServerConfig, error) {
 	redirectURL := cfg.Section("Google").Key("RedirectURL").String()
 
 	if clientID == "" || clientSecret == "" || redirectURL == "" {
-		return nil, nil, fiber.NewError(fiber.StatusInternalServerError, "Google OAuth configuration is missing")
+		return nil, nil, nil, nil, fiber.NewError(fiber.StatusInternalServerError, "Google OAuth configuration is missing")
 	}
 
 	jwtTokenSecret := cfg.Section("Server").Key("JWTTokenSecret").String()
 	if jwtTokenSecret == "" {
-		return nil, nil, fiber.NewError(fiber.StatusInternalServerError, "JWT Token Secret is missing in configuration")
+		return nil, nil, nil, nil, fiber.NewError(fiber.StatusInternalServerError, "JWT Token Secret is missing in configuration")
 	}
 	serverConfig := &ServerConfig{
 		JWTTokenSecret: jwtTokenSecret,
 	}
 	if jwtTokenSecret == "" {
-		return nil, nil, fiber.NewError(fiber.StatusInternalServerError, "JWT Token Secret is missing in configuration")
+		return nil, nil, nil, nil, fiber.NewError(fiber.StatusInternalServerError, "JWT Token Secret is missing in configuration")
 	}
+
+	dsnCore := cfg.Section("database").Key("dsn").String()
+	if dsnCore == "" {
+		return nil, nil, nil, nil, fiber.NewError(fiber.StatusInternalServerError, "Database DSN is missing in configuration")
+	}
+
+	webhookURL := cfg.Section("webhook").Key("url").String()
 
 	return &oauth2.Config{
 		ClientID:     clientID,
@@ -48,7 +55,7 @@ func LoadConfig() (*oauth2.Config, *ServerConfig, error) {
 		RedirectURL:  redirectURL,
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
 		Endpoint:     google.Endpoint,
-	}, serverConfig, nil
+	}, serverConfig, &dsnCore, &webhookURL, nil
 }
 
 func GetGoogleOAuthURL(cfg *oauth2.Config) string {

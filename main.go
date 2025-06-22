@@ -3,12 +3,14 @@ package main
 import (
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/m-tsuru/tenchi-geolocation/lib"
 	"github.com/m-tsuru/tenchi-geolocation/structs"
-	"gorm.io/driver/sqlite"
+	// "gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -43,6 +45,26 @@ func AllowTimingMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// 許可する時刻（"15:04" 形式）の配列
 		allowedTimes := []string{
+			"00:00",
+			"00:30",
+			"01:00",
+			"01:30",
+			"02:00",
+			"02:30",
+			"03:00",
+			"03:30",
+			"04:00",
+			"04:30",
+			"05:00",
+			"05:30",
+			"06:00",
+			"06:30",
+			"07:00",
+			"07:30",
+			"08:00",
+			"08:30",
+			"09:00",
+			"09:30",
 			"10:00",
 			"10:30",
 			"11:00",
@@ -60,6 +82,17 @@ func AllowTimingMiddleware() fiber.Handler {
 			"17:00",
 			"17:30",
 			"18:00",
+			"18:30",
+			"19:00",
+			"19:30",
+			"20:00",
+			"20:30",
+			"21:00",
+			"21:30",
+			"22:00",
+			"22:30",
+			"23:00",
+			"23:30",
 		}
 
 		now := c.Context().Time()
@@ -89,16 +122,19 @@ func AllowTimingMiddleware() fiber.Handler {
 }
 
 func main() {
-	oaCfg, svrCfg, err := lib.LoadConfig()
+	oaCfg, svrCfg, dsnCfg, webhookURL, err := lib.LoadConfig()
 	if err != nil {
 		// Handle error
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	db, err := gorm.Open(
-		sqlite.Open("main.db"),
+		postgres.Open(*dsnCfg),
 		&gorm.Config{},
 	)
+	if err != nil {
+        log.Fatalf("Failed to open database: %v", err)
+    }
 
 	dbInstance := &structs.Database{DB: db}
 	err = dbInstance.AutoMigrateModels()
@@ -149,6 +185,19 @@ func main() {
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).SendString("Failed to create user: " + err.Error())
 			}
+			// JSON Web Token Generation
+			token, err := lib.GenerateJWT(idStr, svrCfg.JWTTokenSecret)
+			if err != nil {
+				// Handle error
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate JWT: " + err.Error())
+			}
+			c.Cookie(&fiber.Cookie{
+				Name:     "jwt",
+				Value:    *token,
+				HTTPOnly: true,
+				Secure:   true,
+				SameSite: fiber.CookieSameSiteStrictMode,
+			})
 			return c.Redirect("/", fiber.StatusFound)
 		}
 
@@ -167,6 +216,18 @@ func main() {
 		})
 
 		return c.Redirect("/", fiber.StatusFound)
+	})
+
+	api.Post("/logout", func(c *fiber.Ctx) error {
+		c.Cookie(&fiber.Cookie{
+			Name:     "jwt",
+			Value:    "",
+			HTTPOnly: true,
+			Secure:   true,
+			SameSite: fiber.CookieSameSiteStrictMode,
+			Expires:  time.Unix(0, 0), // 1970年
+		})
+		return c.SendStatus(fiber.StatusOK)
 	})
 
 	auth := api.Group("/", Requirelogin(db, svrCfg.JWTTokenSecret))
@@ -294,6 +355,17 @@ func main() {
 		if err != nil {
 			// Handle error
 			return c.Status(fiber.StatusInternalServerError).SendString("Failed to add geolocation: " + err.Error())
+		}
+		ud, err := dbInstance.GetUserDetailByID(userID)
+		if ud == nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("User detail not found")
+		} else if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Failed to get user detail: " + err.Error())
+		}
+
+		err = lib.NotifyGeolocationUpdate(ud, webhookURL, geolocation)
+		if err != nil {
+			log.Printf("Failed to notify geolocation update: %v", err)
 		}
 		return c.JSON(geolocation)
 	})

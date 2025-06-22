@@ -60,6 +60,9 @@ window.onload = function() {
           alert('登録できません: ' + msg);
         });
       }
+      if (!res.ok) {
+        return res.text().then(msg => alert('登録できません: ' + msg));
+      }
       return res.json();
     }).then(data => {
       if (data && data.latitude) {
@@ -238,3 +241,14 @@ window.onload = function() {
     });
   }
 };
+
+function deleteAllSiteCookies() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+        // ドメインとパスを考慮して削除
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${location.hostname}`;
+    }
+}

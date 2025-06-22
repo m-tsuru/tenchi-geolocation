@@ -5,10 +5,19 @@ services:
       dockerfile: Dockerfile
     container_name: tenchi-geolocation-app
     ports:
-      - "3000:3000"
+      - "8100:80"
+    networks:
+      nodoka:
+        ipv4_address: 192.168.151.25
     volumes:
       - ./web:/app/web
       - ./main.db:/app/main.db
+      - ./.env:/app/.env
     environment:
       - TZ=Asia/Tokyo
     restart: unless-stopped
+
+networks:
+  nodoka:
+    name: nodoka
+    external: true

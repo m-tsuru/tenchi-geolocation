@@ -22,7 +22,7 @@ type UserProfile struct {
 	ID        string    `gorm:"primaryKey"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
-	UserName  string    `gorm:"unique;not null"`
+	UserName  string    `gorm:"not null"`
 	TeamID    int       `gorm:"not null"`
 	AvatarURL string    `gorm:"default:null"`
 }
