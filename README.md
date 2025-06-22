@@ -45,4 +45,4 @@
 
 いろんなことができる。
 
-<img src="./docs/ss3.jpg" alt="スクリーンショット3" width="300px">
+<img src="./docs/ss3.png" alt="スクリーンショット3" width="300px">
